@@ -1,0 +1,300 @@
+{
+  "name": "MAS - Gerenciador de Projetos",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "node-chat-trigger",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 180],
+      "webhookId": "mas-gerenciador-projetos"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um orquestrador de um sistema de gerenciamento de tarefas.\nSua única função é analisar a mensagem do usuário e decidir qual ação executar.\n\nResponda SEMPRE em JSON puro, sem markdown, no seguinte formato:\n{\n  \"intent\": \"<uma das opções abaixo>\",\n  \"dados\": {\n    \"nome\": \"<nome da tarefa se mencionado>\",\n    \"projeto\": \"<nome do projeto se mencionado>\",\n    \"prioridade\": \"<Alta, Média ou Baixa se mencionado>\",\n    \"status\": \"<A fazer, Em andamento ou Concluído se mencionado>\"\n  },\n  \"mensagem_original\": \"<repita aqui a mensagem do usuário>\"\n}\n\nOpções de intent:\n- \"criar_tarefa\" → quando o usuário quer criar, adicionar ou registrar uma tarefa\n- \"atualizar_tarefa\" → quando o usuário quer mudar status, editar ou modificar uma tarefa\n- \"listar_tarefas\" → quando o usuário quer ver, listar ou consultar tarefas\n- \"gerar_relatorio\" → quando o usuário quer um resumo, relatório ou visão geral\n- \"outro\" → qualquer outra coisa\n\nPreencha apenas os campos que o usuário mencionou. Deixe os outros como string vazia \"\"."
+        }
+      },
+      "id": "node-orquestrador",
+      "name": "Agente Orquestrador",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "modelName": "gemini-2.0-flash",
+        "options": {}
+      },
+      "id": "node-gemini-orquestrador",
+      "name": "Gemini Flash (Orquestrador)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [380, 360]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "node-memory",
+      "name": "Window Buffer Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [540, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const texto = $input.first().json.output;\nconst limpo = texto.replace(/```json|```/g, '').trim();\ntry {\n  const parsed = JSON.parse(limpo);\n  return [{ json: parsed }];\n} catch(e) {\n  return [{ json: { intent: 'outro', dados: {}, mensagem_original: texto } }];\n}"
+      },
+      "id": "node-parse-json",
+      "name": "Parse JSON do Orquestrador",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 180]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "criar_tarefa",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Criar Tarefa"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "atualizar_tarefa",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Atualizar Tarefa"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "listar_tarefas",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Listar Tarefas"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "gerar_relatorio",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Gerar Relatório"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch",
+      "name": "Switch de Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [940, 180]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um agente especialista em gerenciar tarefas no Notion.\nVocê recebe dados estruturados e deve usar as ferramentas disponíveis para criar ou atualizar tarefas no banco de dados.\nConfirme sempre o que foi feito de forma clara e amigável em português.\n\nQuando for criar uma tarefa, use os dados do campo 'dados' da mensagem recebida.\nSempre confirme: nome da tarefa criada, projeto e prioridade."
+        }
+      },
+      "id": "node-agente-tarefas",
+      "name": "Agente de Tarefas",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1180, 60]
+    },
+    {
+      "parameters": {
+        "modelName": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "id": "node-groq-tarefas",
+      "name": "Groq Llama (Tarefas)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [1100, 260]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um agente especialista em consultar e exibir tarefas do Notion.\nBusque as tarefas e apresente-as de forma organizada usando listas simples.\nAgrupe por status quando possível: primeiro 'Em andamento', depois 'A fazer', depois 'Concluído'.\nResponda sempre em português de forma clara e amigável."
+        }
+      },
+      "id": "node-agente-status",
+      "name": "Agente de Status",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1180, 260]
+    },
+    {
+      "parameters": {
+        "modelName": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "id": "node-groq-status",
+      "name": "Groq Llama (Status)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [1100, 440]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um agente analista de produtividade. Sua função é buscar todas as tarefas do Notion, analisá-las e gerar um relatório executivo em português com:\n\n📊 RESUMO GERAL\n- Total de tarefas por status\n\n🔴 PRIORIDADE ALTA PENDENTE\n- Liste as tarefas de alta prioridade que ainda não foram concluídas\n\n📁 PROJETOS EM ABERTO\n- Projetos com mais tarefas pendentes\n\n✅ PRÓXIMOS PASSOS\n- Recomendação de o que fazer primeiro\n\nUse formatação clara com emojis e seções bem definidas."
+        }
+      },
+      "id": "node-agente-relatorio",
+      "name": "Agente de Relatório",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1180, 460]
+    },
+    {
+      "parameters": {
+        "modelName": "gemini-2.0-flash",
+        "options": {}
+      },
+      "id": "node-gemini-relatorio",
+      "name": "Gemini Flash (Relatório)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1100, 620]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Você é um assistente simpático de gerenciamento de tarefas.\nO usuário disse algo que não é uma tarefa, consulta ou relatório.\nResponda de forma amigável em português, explique o que você pode fazer:\n- Criar tarefas\n- Atualizar status de tarefas\n- Listar tarefas\n- Gerar relatório de produtividade\nPeça para o usuário tentar novamente com um desses objetivos."
+        }
+      },
+      "id": "node-agente-fallback",
+      "name": "Agente Fallback",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1180, 660]
+    },
+    {
+      "parameters": {
+        "modelName": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "id": "node-groq-fallback",
+      "name": "Groq Llama (Fallback)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [1100, 820]
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [{ "node": "Agente Orquestrador", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agente Orquestrador": {
+      "main": [
+        [{ "node": "Parse JSON do Orquestrador", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Flash (Orquestrador)": {
+      "ai_languageModel": [
+        [{ "node": "Agente Orquestrador", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [{ "node": "Agente Orquestrador", "type": "ai_memory", "index": 0 }]
+      ]
+    },
+    "Parse JSON do Orquestrador": {
+      "main": [
+        [{ "node": "Switch de Intent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch de Intent": {
+      "main": [
+        [{ "node": "Agente de Tarefas", "type": "main", "index": 0 }],
+        [{ "node": "Agente de Tarefas", "type": "main", "index": 0 }],
+        [{ "node": "Agente de Status", "type": "main", "index": 0 }],
+        [{ "node": "Agente de Relatório", "type": "main", "index": 0 }],
+        [{ "node": "Agente Fallback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Groq Llama (Tarefas)": {
+      "ai_languageModel": [
+        [{ "node": "Agente de Tarefas", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "Groq Llama (Status)": {
+      "ai_languageModel": [
+        [{ "node": "Agente de Status", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "Gemini Flash (Relatório)": {
+      "ai_languageModel": [
+        [{ "node": "Agente de Relatório", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "Groq Llama (Fallback)": {
+      "ai_languageModel": [
+        [{ "node": "Agente Fallback", "type": "ai_languageModel", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "mas-gerenciador-projetos-v1"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "triggerCount": 1,
+  "tags": [
+    { "name": "multi-agente" },
+    { "name": "portfolio" },
+    { "name": "notion" }
+  ]
+}
